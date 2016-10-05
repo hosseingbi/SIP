@@ -235,6 +235,14 @@ static pj_bool_t proxy_on_rx_request( pjsip_rx_data *rdata )
 	    return PJ_TRUE;
 	}
 
+	/* Simple registrar (Added by me) */
+    if (rdata->msg_info.msg->line.req.method.id == PJSIP_REGISTER_METHOD )
+    {
+	simple_registrar(rdata);
+	return PJ_TRUE;
+    }
+
+
 	/* Send 100/Trying if this is an INVITE */
 	if (rdata->msg_info.msg->line.req.method.id == PJSIP_INVITE_METHOD) {
 	    pjsip_tx_data *res100;
