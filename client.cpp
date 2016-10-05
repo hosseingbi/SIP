@@ -48,21 +48,24 @@ public:
 
 static void Prog(Endpoint &ep) throw(Error)
 {
+    //Initializing endpoint
     EpConfig ep_cfg;
     ep.libInit( ep_cfg );
-
+    //Creating transpor
     TransportConfig tcfg;
     tcfg.port = 5060;
     ep.transportCreate(PJSIP_TRANSPORT_UDP, tcfg);
     ep.transportCreate(PJSIP_TRANSPORT_TCP, tcfg);
-
+    //Initializing and creating account
     AccountConfig acc_cfg;
-    acc_cfg.idUri = "sip:localhost";
+    acc_cfg.idUri = "sip:test@192.168.1.64";
+    //Registeration
+    acc_cfg.regConfig.registrarUri = "sip:192.168.1.64:5060";
     std::auto_ptr<MyAccount> acc(new MyAccount);
     acc->create(acc_cfg);
-
+    //Creating new buddy
     BuddyConfig cfg;
-    cfg.uri = "sip:8.8.8.8";
+    cfg.uri = "sip:test2@192.168.1.64";
     MyBuddy buddy;
     try {
     buddy.create(*acc, cfg);
@@ -74,6 +77,8 @@ static void Prog(Endpoint &ep) throw(Error)
 
     ep.libStart();
     std::cout << "*** PJSUA2 STARTED ***" << std::endl;
+
+    //Sending a message to buddy
     SendInstantMessageParam prm;
     prm.content = "Hello world!";
     buddy.sendInstantMessage(prm);
