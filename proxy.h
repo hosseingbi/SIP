@@ -1,5 +1,5 @@
 /* $Id: proxy.h 5311 2016-05-20 04:17:00Z ming $ */
-/* 
+/*
  * Copyright (C) 2008-2011 Teluu Inc. (http://www.teluu.com)
  * Copyright (C) 2003-2008 Benny Prijono <benny@prijono.org>
  *
@@ -15,14 +15,61 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <pjsip.h>
 #include <pjlib-util.h>
 #include <pjlib.h>
-
-
+#include <pjsua.h>
+#include <iostream>
+/*new
+/*
+ * A simple registrar, invoked by default_mod_on_rx_request()
+ */
+/*static void simple_registrar(pjsip_rx_data *rdata)
+{
+    pjsip_tx_data *tdata;
+    const pjsip_expires_hdr *exp;
+    const pjsip_hdr *h;
+    unsigned cnt = 0;
+    pjsip_generic_string_hdr *srv;
+    pj_status_t status;
+    status = pjsip_endpt_create_response(pjsua_get_pjsip_endpt(),rdata, 200, NULL, &tdata);
+    if (status != PJ_SUCCESS)
+    return;
+    exp = (pjsip_expires_hdr *)pjsip_msg_find_hdr(rdata->msg_info.msg,
+                          PJSIP_H_EXPIRES, NULL);
+    h = rdata->msg_info.msg->hdr.next;
+    while (h != &rdata->msg_info.msg->hdr) {
+    if (h->type == PJSIP_H_CONTACT) {
+        const pjsip_contact_hdr *c = (const pjsip_contact_hdr*)h;
+        int e = c->expires;
+        if (e < 0) {
+        if (exp)
+            e = exp->ivalue;
+        else
+            e = 3600;
+        }
+        if (e > 0) {
+        pjsip_contact_hdr *nc = (pjsip_contact_hdr *)pjsip_hdr_clone(
+                                tdata->pool, h);
+        nc->expires = e;
+        pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)nc);
+        ++cnt;
+        }
+    }
+    h = h->next;
+    }
+    srv = pjsip_generic_string_hdr_create(tdata->pool, NULL, NULL);
+    srv->name = pj_str("Server");
+    srv->hvalue = pj_str("pjsua simple registrar");
+    pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)srv);
+    pjsip_endpt_send_response2(pjsua_get_pjsip_endpt(),
+               rdata, tdata, NULL, NULL);
+}
+//new
+* /
 /* Options */
 static struct global_struct
 {
@@ -40,7 +87,39 @@ static struct global_struct
     pjsip_host_port	 name[16];
 } global;
 
+//added by hossein------------------------------------------------------
+static void pres_on_evsub_state( pjsip_evsub *sub, pjsip_event *event);
+static void pres_on_evsub_tsx_state( pjsip_evsub *sub, pjsip_transaction *tsx,
+                     pjsip_event *event);
+static void pres_on_evsub_rx_refresh( pjsip_evsub *sub,
+                      pjsip_rx_data *rdata,
+                      int *p_st_code,
+                      pj_str_t **p_st_text,
+                      pjsip_hdr *res_hdr,
+                      pjsip_msg_body **p_body);
+static void pres_on_evsub_rx_notify( pjsip_evsub *sub,
+                     pjsip_rx_data *rdata,
+                     int *p_st_code,
+                     pj_str_t **p_st_text,
+                     pjsip_hdr *res_hdr,
+                     pjsip_msg_body **p_body);
+static void pres_on_evsub_client_refresh(pjsip_evsub *sub);
+static void pres_on_evsub_server_timeout(pjsip_evsub *sub);
 
+
+
+static pjsip_evsub_user user_cb =
+{
+    &pres_on_evsub_state,
+    &pres_on_evsub_tsx_state,
+    &pres_on_evsub_rx_refresh,
+    &pres_on_evsub_rx_notify,
+    &pres_on_evsub_client_refresh,
+    &pres_on_evsub_server_timeout,
+};
+
+
+//----------------------------------------------------------------------
 
 static void app_perror(const char *msg, pj_status_t status)
 {
@@ -54,52 +133,52 @@ static void app_perror(const char *msg, pj_status_t status)
 static void usage(void)
 {
     puts("Options:\n"
-	 "\n"
-	 " -p, --port N       Set local listener port to N\n"
-	 " -R, --rr           Perform record routing\n"
-	 " -L, --log-level N  Set log level to N (default: 4)\n"
-	 " -h, --help         Show this help screen\n"
-	 );
+     "\n"
+     " -p, --port N       Set local listener port to N\n"
+     " -R, --rr           Perform record routing\n"
+     " -L, --log-level N  Set log level to N (default: 4)\n"
+     " -h, --help         Show this help screen\n"
+     );
 }
 
 
 static pj_status_t init_options(int argc, char *argv[])
 {
     struct pj_getopt_option long_opt[] = {
-	{ "port",	1, 0, 'p'},
-	{ "rr",		0, 0, 'R'},
-	{ "log-level",	1, 0, 'L'},
-	{ "help",	0, 0, 'h'},
-	{ NULL,		0, 0, 0}
+    { "port",	1, 0, 'p'},
+    { "rr",		0, 0, 'R'},
+    { "log-level",	1, 0, 'L'},
+    { "help",	0, 0, 'h'},
+    { NULL,		0, 0, 0}
     };
     int c;
     int opt_ind;
 
     pj_optind = 0;
     while((c=pj_getopt_long(argc, argv, "p:L:Rh", long_opt, &opt_ind))!=-1) {
-	switch (c) {
-	case 'p':
-	    global.port = atoi(pj_optarg);
-	    printf("Port is set to %d\n", global.port);
-	    break;
-	
-	case 'R':
-	    global.record_route = PJ_TRUE;
-	    printf("Using record route mode\n");
-	    break;
+    switch (c) {
+    case 'p':
+        global.port = atoi(pj_optarg);
+        printf("Port is set to %d\n", global.port);
+        break;
 
-	case 'L':
-	    pj_log_set_level(atoi(pj_optarg));
-	    break;
+    case 'R':
+        global.record_route = PJ_TRUE;
+        printf("Using record route mode\n");
+        break;
 
-	case 'h':
-	    usage();
-	    return -1;
+    case 'L':
+        pj_log_set_level(atoi(pj_optarg));
+        break;
 
-	default:
-	    puts("Unknown option. Run with --help for help.");
-	    return -1;
-	}
+    case 'h':
+        usage();
+        return -1;
+
+    default:
+        puts("Unknown option. Run with --help for help.");
+        return -1;
+    }
     }
 
     return PJ_SUCCESS;
@@ -124,16 +203,16 @@ static pj_status_t init_options(int argc, char *argv[])
 static pj_bool_t logging_on_rx_msg(pjsip_rx_data *rdata)
 {
     PJ_LOG(5,(THIS_FILE, "RX %d bytes %s from %s %s:%d:\n"
-			 "%.*s\n"
-			 "--end msg--",
-			 rdata->msg_info.len,
-			 pjsip_rx_data_get_info(rdata),
-			 rdata->tp_info.transport->type_name,
-			 rdata->pkt_info.src_name,
-			 rdata->pkt_info.src_port,
-			 (int)rdata->msg_info.len,
-			 rdata->msg_info.msg_buf));
-    
+             "%.*s\n"
+             "--end msg--",
+             rdata->msg_info.len,
+             pjsip_rx_data_get_info(rdata),
+             rdata->tp_info.transport->type_name,
+             rdata->pkt_info.src_name,
+             rdata->pkt_info.src_port,
+             (int)rdata->msg_info.len,
+             rdata->msg_info.msg_buf));
+
     /* Always return false, otherwise messages will not get processed! */
     return PJ_FALSE;
 }
@@ -141,7 +220,7 @@ static pj_bool_t logging_on_rx_msg(pjsip_rx_data *rdata)
 /* Notification on outgoing messages */
 static pj_status_t logging_on_tx_msg(pjsip_tx_data *tdata)
 {
-    
+
     /* Important note:
      *	tp_info field is only valid after outgoing messages has passed
      *	transport layer. So don't try to access tp_info when the module
@@ -149,22 +228,22 @@ static pj_status_t logging_on_tx_msg(pjsip_tx_data *tdata)
      */
 
     PJ_LOG(5,(THIS_FILE, "TX %d bytes %s to %s %s:%d:\n"
-			 "%.*s\n"
-			 "--end msg--",
-			 (tdata->buf.cur - tdata->buf.start),
-			 pjsip_tx_data_get_info(tdata),
-			 tdata->tp_info.transport->type_name,
-			 tdata->tp_info.dst_name,
-			 tdata->tp_info.dst_port,
-			 (int)(tdata->buf.cur - tdata->buf.start),
-			 tdata->buf.start));
+             "%.*s\n"
+             "--end msg--",
+             (tdata->buf.cur - tdata->buf.start),
+             pjsip_tx_data_get_info(tdata),
+             tdata->tp_info.transport->type_name,
+             tdata->tp_info.dst_name,
+             tdata->tp_info.dst_port,
+             (int)(tdata->buf.cur - tdata->buf.start),
+             tdata->buf.start));
 
     /* Always return success, otherwise message will not get sent! */
     return PJ_SUCCESS;
 }
 
 /* The module instance. */
-static pjsip_module mod_msg_logger = 
+static pjsip_module mod_msg_logger =
 {
     NULL, NULL,				/* prev, next.		*/
     { "mod-msg-logger", 14 },		/* Name.		*/
@@ -208,25 +287,25 @@ static pj_status_t init_stack(void)
 #if STATEFUL
     status = pjsip_tsx_layer_init_module(global.endpt);
     PJ_ASSERT_RETURN(status == PJ_SUCCESS, status);
+    status = pjsip_ua_init_module( global.endpt, NULL );
+        PJ_ASSERT_RETURN(status == PJ_SUCCESS, 1);
 #endif
 
     /* Create listening transport */
     {
-	pj_sockaddr_in addr;
+        pj_sockaddr_in addr;
 
-	addr.sin_family = pj_AF_INET();
-	addr.sin_addr.s_addr = 0;
-	addr.sin_port = pj_htons((pj_uint16_t)global.port);
+        addr.sin_family = pj_AF_INET();
+        addr.sin_addr.s_addr = 0;
+        addr.sin_port = pj_htons((pj_uint16_t)global.port);
 
-	status = pjsip_udp_transport_start( global.endpt, &addr, 
-					    NULL, 1, NULL);
-	if (status != PJ_SUCCESS)
-	    return status;
+        status = pjsip_udp_transport_start( global.endpt, &addr, NULL, 1, NULL);
+        if (status != PJ_SUCCESS)
+            return status;
     }
 
     /* Create pool for the application */
-    global.pool = pj_pool_create(&global.cp.factory, "proxyapp", 
-				 4000, 4000, NULL);
+    global.pool = pj_pool_create(&global.cp.factory, "proxyapp", 4000, 4000, NULL);
 
     /* Register the logger module */
     pjsip_endpt_register_module(global.endpt, &mod_msg_logger);
@@ -252,31 +331,30 @@ static pj_status_t init_proxy(void)
     /* The first address is important since this would be the one
      * to be added in Record-Route.
      */
-    if (pj_gethostip(pj_AF_INET(), &pri_addr)==PJ_SUCCESS) {
-	char addr[PJ_INET_ADDRSTRLEN];
-	pj_inet_ntop(pj_AF_INET(), &pri_addr.ipv4.sin_addr, addr,
-		     sizeof(addr));
-	pj_strdup2(global.pool, &global.name[global.name_cnt].host, addr);
-	global.name[global.name_cnt].port = global.port;
-	global.name_cnt++;
+    if (pj_gethostip(pj_AF_INET(), &pri_addr)==PJ_SUCCESS)
+    {
+        char addr[PJ_INET_ADDRSTRLEN];
+        pj_inet_ntop(pj_AF_INET(), &pri_addr.ipv4.sin_addr, addr, sizeof(addr));
+        pj_strdup2(global.pool, &global.name[global.name_cnt].host, addr);
+        global.name[global.name_cnt].port = global.port;
+        global.name_cnt++;
     }
 
     /* Get the rest of IP interfaces */
     if (pj_enum_ip_interface(pj_AF_INET(), &addr_cnt, addr_list) == PJ_SUCCESS)
     {
-	for (i=0; i<addr_cnt; ++i) {
-	    char addr[PJ_INET_ADDRSTRLEN];
-	    
-	    if (addr_list[i].ipv4.sin_addr.s_addr == pri_addr.ipv4.sin_addr.s_addr)
-		continue;
+        for (i=0; i<addr_cnt; ++i)
+        {
+            char addr[PJ_INET_ADDRSTRLEN];
 
-	    pj_inet_ntop(pj_AF_INET(), &addr_list[i].ipv4.sin_addr, addr,
-	    		 sizeof(addr));
-	    pj_strdup2(global.pool, &global.name[global.name_cnt].host,
-		       addr);
-	    global.name[global.name_cnt].port = global.port;
-	    global.name_cnt++;
-	}
+            if (addr_list[i].ipv4.sin_addr.s_addr == pri_addr.ipv4.sin_addr.s_addr)
+                continue;
+
+            pj_inet_ntop(pj_AF_INET(), &addr_list[i].ipv4.sin_addr, addr, sizeof(addr));
+            pj_strdup2(global.pool, &global.name[global.name_cnt].host, addr);
+            global.name[global.name_cnt].port = global.port;
+            global.name_cnt++;
+        }
     }
 
     /* Add loopback address. */
@@ -296,15 +374,14 @@ static pj_status_t init_proxy(void)
 
     PJ_LOG(3,(THIS_FILE, "Proxy started, listening on port %d", global.port));
     PJ_LOG(3,(THIS_FILE, "Local host aliases:"));
-    for (i=0; i<global.name_cnt; ++i) {
-	PJ_LOG(3,(THIS_FILE, " %.*s:%d", 
-		  (int)global.name[i].host.slen,
-		  global.name[i].host.ptr,
-		  global.name[i].port));
+    for (i=0; i < global.name_cnt; ++i)
+    {
+        PJ_LOG(3,(THIS_FILE, " %.*s:%d", (int)global.name[i].host.slen, global.name[i].host.ptr, global.name[i].port));
     }
 
-    if (global.record_route) {
-	PJ_LOG(3,(THIS_FILE, "Using Record-Route mode"));
+    if (global.record_route)
+    {
+        PJ_LOG(3,(THIS_FILE, "Using Record-Route mode"));
     }
 
     return PJ_SUCCESS;
@@ -318,8 +395,9 @@ static int worker_thread(void *p)
 
     PJ_UNUSED_ARG(p);
 
-    while (!global.quit_flag) {
-	pjsip_endpt_handle_events(global.endpt, &delay);
+    while (!global.quit_flag)
+    {
+        pjsip_endpt_handle_events(global.endpt, &delay);
     }
 
     return 0;
@@ -331,14 +409,13 @@ static int worker_thread(void *p)
 static pj_bool_t is_uri_local(const pjsip_sip_uri *uri)
 {
     unsigned i;
-    for (i=0; i<global.name_cnt; ++i) {
-	if ((uri->port == global.name[i].port ||
-	     (uri->port==0 && global.name[i].port==5060)) &&
-	    pj_stricmp(&uri->host, &global.name[i].host)==0)
-	{
-	    /* Match */
-	    return PJ_TRUE;
-	}
+    for (i=0; i<global.name_cnt; ++i)
+    {
+        if ((uri->port == global.name[i].port || (uri->port==0 && global.name[i].port==5060)) && pj_stricmp(&uri->host, &global.name[i].host)==0)
+        {
+            /* Match */
+            return PJ_TRUE;
+        }
     }
 
     /* Doesn't match */
@@ -357,7 +434,7 @@ static pj_status_t proxy_verify_request(pjsip_rx_data *rdata)
 
     /* Before an element can proxy a request, it MUST verify the message's
      * validity.  A valid message must pass the following checks:
-     * 
+     *
      * 1. Reasonable Syntax
      * 2. URI scheme
      * 3. Max-Forwards
@@ -373,23 +450,19 @@ static pj_status_t proxy_verify_request(pjsip_rx_data *rdata)
     /* 2. URI scheme.
      * We only want to support "sip:"/"sips:" URI scheme for this simple proxy.
      */
-    if (!PJSIP_URI_SCHEME_IS_SIP(rdata->msg_info.msg->line.req.uri) &&
-	!PJSIP_URI_SCHEME_IS_SIPS(rdata->msg_info.msg->line.req.uri))
+    if (!PJSIP_URI_SCHEME_IS_SIP(rdata->msg_info.msg->line.req.uri) && !PJSIP_URI_SCHEME_IS_SIPS(rdata->msg_info.msg->line.req.uri))
     {
-	pjsip_endpt_respond_stateless(global.endpt, rdata, 
-				      PJSIP_SC_UNSUPPORTED_URI_SCHEME, NULL,
-				      NULL, NULL);
-	return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_UNSUPPORTED_URI_SCHEME);
+        pjsip_endpt_respond_stateless(global.endpt, rdata, PJSIP_SC_UNSUPPORTED_URI_SCHEME, NULL, NULL, NULL);
+        return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_UNSUPPORTED_URI_SCHEME);
     }
 
     /* 3. Max-Forwards.
      * Send error if Max-Forwards is 1 or lower.
      */
-    if (rdata->msg_info.max_fwd && rdata->msg_info.max_fwd->ivalue <= 1) {
-	pjsip_endpt_respond_stateless(global.endpt, rdata, 
-				      PJSIP_SC_TOO_MANY_HOPS, NULL,
-				      NULL, NULL);
-	return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_TOO_MANY_HOPS);
+    if (rdata->msg_info.max_fwd && rdata->msg_info.max_fwd->ivalue <= 1)
+    {
+        pjsip_endpt_respond_stateless(global.endpt, rdata,PJSIP_SC_TOO_MANY_HOPS, NULL, NULL, NULL);
+        return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_TOO_MANY_HOPS);
     }
 
     /* 4. (Optional) Loop Detection.
@@ -397,13 +470,10 @@ static pj_status_t proxy_verify_request(pjsip_rx_data *rdata)
      */
 
     /* 5. Proxy-Require */
-    if (pjsip_msg_find_hdr_by_name(rdata->msg_info.msg, &STR_PROXY_REQUIRE, 
-				   NULL) != NULL) 
+    if (pjsip_msg_find_hdr_by_name(rdata->msg_info.msg, &STR_PROXY_REQUIRE, NULL) != NULL)
     {
-	pjsip_endpt_respond_stateless(global.endpt, rdata, 
-				      PJSIP_SC_BAD_EXTENSION, NULL,
-				      NULL, NULL);
-	return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_BAD_EXTENSION);
+        pjsip_endpt_respond_stateless(global.endpt, rdata, PJSIP_SC_BAD_EXTENSION, NULL, NULL, NULL);
+        return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_BAD_EXTENSION);
     }
 
     /* 6. Proxy-Authorization.
@@ -432,45 +502,49 @@ static pj_status_t proxy_process_routing(pjsip_tx_data *tdata)
      * Route header field.  The proxy MUST then proceed as if it received
      * this modified request.
      */
-    if (is_uri_local(target)) {
-	pjsip_route_hdr *r;
-	pjsip_sip_uri *uri;
+    if (is_uri_local(target))
+    {
+        pjsip_route_hdr *r;
+        pjsip_sip_uri *uri;
 
-	/* Find the first Route header */
-	r = hroute = (pjsip_route_hdr*)
-		     pjsip_msg_find_hdr(tdata->msg, PJSIP_H_ROUTE, NULL);
-	if (r == NULL) {
-	    /* No Route header. This request is destined for this proxy. */
-	    return PJ_SUCCESS;
-	}
+        /* Find the first Route header */
+        r = hroute = (pjsip_route_hdr*)pjsip_msg_find_hdr(tdata->msg, PJSIP_H_ROUTE, NULL);
+        if (r == NULL)
+        {
+            std::cout<<"No Route header. This request is destined for this proxy."<<std::endl;
+            /* No Route header. This request is destined for this proxy. */
+            return PJ_SUCCESS;
+        }
 
-	/* Find the last Route header */
-	while ( (r=(pjsip_route_hdr*)pjsip_msg_find_hdr(tdata->msg, 
-						        PJSIP_H_ROUTE, 
-							r->next)) != NULL )
-	{
-	    hroute = r;
-	}
+        /* Find the last Route header */
+        while ( (r=(pjsip_route_hdr*)pjsip_msg_find_hdr(tdata->msg, PJSIP_H_ROUTE, r->next)) != NULL )
+        {
+            hroute = r;
+        }
 
-	/* If the last Route header doesn't have ";lr" parameter, then
-	 * this is a strict-routed request indeed, and we follow the steps
-	 * in processing strict-route requests above.
-	 *
-	 * But if it does contain ";lr" parameter, skip the strict-route
-	 * processing.
-	 */
-	uri = (pjsip_sip_uri*)
-	      pjsip_uri_get_uri(&hroute->name_addr);
-	if (uri->lr_param == 0) {
-	    /* Yes this is strict route, so:
-	     * - replace req URI with the URI in Route header,
-	     * - remove the Route header,
-	     * - proceed as if it received this modified request. 
-	    */
-	    tdata->msg->line.req.uri = hroute->name_addr.uri;
-	    target = (pjsip_sip_uri*) tdata->msg->line.req.uri;
-	    pj_list_erase(hroute);
-	}
+        /* If the last Route header doesn't have ";lr" parameter, then
+         * this is a strict-routed request indeed, and we follow the steps
+         * in processing strict-route requests above.
+         *
+         * But if it does contain ";lr" parameter, skip the strict-route
+         * processing.
+         */
+        uri = (pjsip_sip_uri*) pjsip_uri_get_uri(&hroute->name_addr);
+        if (uri->lr_param == 0)
+        {
+            std::cout<<"this is strict route, so:\n"
+                    <<"- replace req URI with the URI in Route header,\n"
+                   <<"- remove the Route header,\n"
+                  <<"- proceed as if it received this modified request.\n";
+            /* Yes this is strict route, so:
+             * - replace req URI with the URI in Route header,
+             * - remove the Route header,
+             * - proceed as if it received this modified request.
+            */
+            tdata->msg->line.req.uri = hroute->name_addr.uri;
+            target = (pjsip_sip_uri*) tdata->msg->line.req.uri;
+            pj_list_erase(hroute);
+        }
     }
 
     /* If the Request-URI contains a maddr parameter, the proxy MUST check
@@ -482,26 +556,28 @@ static pj_status_t proxy_process_routing(pjsip_tx_data *tdata)
      * non-default port or transport parameter and continue processing as if
      * those values had not been present in the request.
      */
-    if (target->maddr_param.slen != 0) {
-	pjsip_sip_uri maddr_uri;
+    if (target->maddr_param.slen != 0)
+    {
+        pjsip_sip_uri maddr_uri;
 
-	maddr_uri.host = target->maddr_param;
-	maddr_uri.port = global.port;
+        maddr_uri.host = target->maddr_param;
+        maddr_uri.port = global.port;
 
-	if (is_uri_local(&maddr_uri)) {
-	    target->maddr_param.slen = 0;
-	    target->port = 0;
-	    target->transport_param.slen = 0;
-	}
+        if (is_uri_local(&maddr_uri))
+        {
+            target->maddr_param.slen = 0;
+            target->port = 0;
+            target->transport_param.slen = 0;
+        }
     }
 
     /* If the first value in the Route header field indicates this proxy,
      * the proxy MUST remove that value from the request.
      */
-    hroute = (pjsip_route_hdr*) 
-	      pjsip_msg_find_hdr(tdata->msg, PJSIP_H_ROUTE, NULL);
-    if (hroute && is_uri_local((pjsip_sip_uri*)hroute->name_addr.uri)) {
-	pj_list_erase(hroute);
+    hroute = (pjsip_route_hdr*)pjsip_msg_find_hdr(tdata->msg, PJSIP_H_ROUTE, NULL);
+    if (hroute && is_uri_local((pjsip_sip_uri*)hroute->name_addr.uri))
+    {
+        pj_list_erase(hroute);
     }
 
     return PJ_SUCCESS;
@@ -512,41 +588,39 @@ static pj_status_t proxy_process_routing(pjsip_tx_data *tdata)
 static void proxy_postprocess(pjsip_tx_data *tdata)
 {
     /* Optionally record-route */
-    if (global.record_route) {
-	char uribuf[128];
-	pj_str_t uri;
-	const pj_str_t H_RR = { "Record-Route", 12 };
-	pjsip_generic_string_hdr *rr;
+    if (global.record_route)
+    {
+        char uribuf[128];
+        pj_str_t uri;
+        const pj_str_t H_RR = { "Record-Route", 12 };
+        pjsip_generic_string_hdr *rr;
 
-	pj_ansi_snprintf(uribuf, sizeof(uribuf), "<sip:%.*s:%d;lr>",
-			 (int)global.name[0].host.slen,
-			 global.name[0].host.ptr,
-			 global.name[0].port);
-	uri = pj_str(uribuf);
-	rr = pjsip_generic_string_hdr_create(tdata->pool,
-					     &H_RR, &uri);
-	pjsip_msg_insert_first_hdr(tdata->msg, (pjsip_hdr*)rr);
+        pj_ansi_snprintf(uribuf, sizeof(uribuf), "<sip:%.*s:%d;lr>", (int)global.name[0].host.slen, global.name[0].host.ptr, global.name[0].port);
+        uri = pj_str(uribuf);
+        rr = pjsip_generic_string_hdr_create(tdata->pool, &H_RR, &uri);
+        pjsip_msg_insert_first_hdr(tdata->msg, (pjsip_hdr*)rr);
     }
 }
 
 
 /* Calculate new target for the request */
-static pj_status_t proxy_calculate_target(pjsip_rx_data *rdata,
-					  pjsip_tx_data *tdata)
+static pj_status_t proxy_calculate_target(pjsip_rx_data *rdata, pjsip_tx_data *tdata)
 {
+     std::cout<<"mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"<<std::endl;
     pjsip_sip_uri *target;
 
     /* RFC 3261 Section 16.5 Determining Request Targets */
 
     target = (pjsip_sip_uri*) tdata->msg->line.req.uri;
-
+    std::cout<<target->host.ptr<<"  :   "<<target->port << "    :   "<<target->user.ptr<<std::endl;
     /* If the Request-URI of the request contains an maddr parameter, the
      * Request-URI MUST be placed into the target set as the only target
      * URI, and the proxy MUST proceed to Section 16.6.
      */
-    if (target->maddr_param.slen) {
-	proxy_postprocess(tdata);
-	return PJ_SUCCESS;
+    if (target->maddr_param.slen)
+    {
+        proxy_postprocess(tdata);
+        return PJ_SUCCESS;
     }
 
 
@@ -555,25 +629,89 @@ static pj_status_t proxy_calculate_target(pjsip_rx_data *rdata,
      * set as the only target, and the element MUST proceed to the task of
      * Request Forwarding (Section 16.6).
      */
-    if (!is_uri_local(target)) {
-	proxy_postprocess(tdata);
-	return PJ_SUCCESS;
+    if (!is_uri_local(target))
+    {
+        std::cout<<"calculate target 1"<<std::endl;
+        proxy_postprocess(tdata);
+        return PJ_SUCCESS;
     }
 
     /* If the target set for the request has not been predetermined as
      * described above, this implies that the element is responsible for the
      * domain in the Request-URI, and the element MAY use whatever mechanism
-     * it desires to determine where to send the request. 
+     * it desires to determine where to send the request.
      */
 
     /* We're not interested to receive request destined to us, so
      * respond with 404/Not Found (only if request is not ACK!).
      */
-    if (rdata->msg_info.msg->line.req.method.id != PJSIP_ACK_METHOD) {
-	pjsip_endpt_respond_stateless(global.endpt, rdata,
-				      PJSIP_SC_NOT_FOUND, NULL,
-				      NULL, NULL);
+    std::cout<<"mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"<<std::endl;
+    if (rdata->msg_info.msg->line.req.method.id != PJSIP_ACK_METHOD)
+    {
+        printf("mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm\n");
+        printf("method : %s id : %d\n",rdata->msg_info.msg->line.req.method.name.ptr,rdata->msg_info.msg->line.req.method.id);
+        //std::cout<<"method : "<<rdata->msg_info.msg->line.req.method.name.ptr <<" id : "<<rdata->msg_info.msg->line.req.method.id<<std::endl;
+        if(rdata->msg_info.msg->line.req.method.id == PJSIP_REGISTER_METHOD)
+        {
+            pjsip_tx_data *tdata;
+            const pjsip_expires_hdr *exp;
+            const pjsip_hdr *h;
+            unsigned cnt = 0;
+            pjsip_generic_string_hdr *srv;
+            pj_status_t status;
+
+            status = pjsip_endpt_create_response(global.endpt,rdata, 200, NULL, &tdata);
+            if (status != PJ_SUCCESS)
+                printf("\nERROR in creating response!!!");
+
+            exp = (pjsip_expires_hdr *)pjsip_msg_find_hdr(rdata->msg_info.msg, PJSIP_H_EXPIRES, NULL);
+
+            h = rdata->msg_info.msg->hdr.next;
+            while (h != &rdata->msg_info.msg->hdr)
+            {
+                if (h->type == PJSIP_H_CONTACT)
+                {
+                    const pjsip_contact_hdr *c = (const pjsip_contact_hdr*)h;
+                    int e = c->expires;
+
+                    if (e < 0)
+                    {
+                        if (exp)
+                            e = exp->ivalue;
+                        else
+                            e = 3600;
+                    }
+
+                    if (e > 0)
+                    {
+                        pjsip_contact_hdr *nc = (pjsip_contact_hdr *)pjsip_hdr_clone(tdata->pool, h);
+                        nc->expires = e;
+                        pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)nc);
+                        ++cnt;
+                    }
+                }
+                h = h->next;
+            }
+
+            srv = pjsip_generic_string_hdr_create(tdata->pool, NULL, NULL);
+            srv->name = pj_str("Server");
+            srv->hvalue = pj_str("pjsua simple registrar");
+            pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)srv);
+
+            status = pjsip_endpt_send_response2(global.endpt,rdata, tdata, NULL, NULL);
+            if (status != PJ_SUCCESS)
+                printf("\nERROR in creating response!!!");
+        }
+        else if(rdata->msg_info.msg->line.req.method.id == PJSIP_OTHER_METHOD && memcmp(rdata->msg_info.msg->line.req.method.name.ptr,"SUBSCRIBE",9) == 0)
+        {
+            //printf("sssssssssssssssssssssssssssssssssssss we put success here\n");
+            return PJ_SUCCESS;
+        }
+
+    //maryam
+    //pjsip_endpt_respond_stateless(global.endpt, rdata,PJSIP_SC_NOT_FOUND, NULL,NULL, NULL);
     }
+
 
     /* Delete the request since we're not forwarding it */
     pjsip_tx_data_dec_ref(tdata);
@@ -581,6 +719,74 @@ static pj_status_t proxy_calculate_target(pjsip_rx_data *rdata,
     return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_NOT_FOUND);
 }
 
+
+///added by hossein-----------------------------------------------------------------
+static pj_status_t proxy_calculate_subscriptions(pjsip_rx_data *rdata, pjsip_tx_data *tdata)
+{
+    pjsip_dialog *dlg = new pjsip_dialog;
+    pjsip_evsub *sub;
+    pj_status_t status;
+    char hostip[PJ_INET6_ADDRSTRLEN+2];
+    pj_sockaddr hostaddr;
+    char temp[80];
+    pj_str_t local_uri;
+    if (pj_gethostip(pj_AF_INET(), &hostaddr) != PJ_SUCCESS)
+    {
+        app_perror( "Unable to retrieve local host IP", status);
+        return 1;
+    }
+    pj_sockaddr_print(&hostaddr, hostip, sizeof(hostip), 2);
+    if(rdata->msg_info.msg->line.req.method.id == PJSIP_OTHER_METHOD && memcmp(rdata->msg_info.msg->line.req.method.name.ptr,"SUBSCRIBE",9) == 0)
+    {
+        printf("sssssssssssssssssssssssssssssssssssss we put success here\n");
+
+        pj_ansi_sprintf(temp, "<sip:test1@%s:%d>",  hostip, 5060);
+        local_uri = pj_str(temp);
+        pjsip_user_agent* tmpua = pjsip_ua_instance();
+        //printf("uri is : %s\n",((char*)rdata->msg_info.msg->line.req.uri->vptr));
+        //((pj_str_t*)rdata->msg_info.msg->line.req.uri->vptr)
+        status = pjsip_dlg_create_uas_and_inc_lock(tmpua,rdata,&local_uri,&dlg);
+        if (status != PJ_SUCCESS)
+        {
+            printf("status code is : %d\n",*((int *)&status));
+            app_perror("Error calculating target", status);
+            //return PJ_TRUE;
+        }
+       // pjsip_dlg_dec_lock(dlg);
+        pjsip_evsub_create_uas(dlg,&user_cb,rdata,0,&sub);
+        pjsip_evsub_accept(sub,rdata,200,NULL);
+        return PJ_SUCCESS;
+    }
+    return PJ_SUCCESS;
+}
+
+
+
+static void pres_on_evsub_state( pjsip_evsub *sub, pjsip_event *event)
+{
+    printf("oooooooooooooooooooooooooooooooooooooooooooo on evsub state\n");
+}
+static void pres_on_evsub_tsx_state( pjsip_evsub *sub, pjsip_transaction *tsx,pjsip_event *event){}
+static void pres_on_evsub_rx_refresh( pjsip_evsub *sub, pjsip_rx_data *rdata, int *p_st_code, pj_str_t **p_st_text, pjsip_hdr *res_hdr, pjsip_msg_body **p_body)
+{}
+static void pres_on_evsub_rx_notify( pjsip_evsub *sub,
+                     pjsip_rx_data *rdata,
+                     int *p_st_code,
+                     pj_str_t **p_st_text,
+                     pjsip_hdr *res_hdr,
+                     pjsip_msg_body **p_body)
+{}
+static void pres_on_evsub_client_refresh(pjsip_evsub *sub)
+{}
+static void pres_on_evsub_server_timeout(pjsip_evsub *sub)
+{}
+
+
+
+
+
+
+///----------------------------------------------------------------------------------
 
 /* Destroy stack */
 static void destroy_stack(void)
@@ -591,4 +797,3 @@ static void destroy_stack(void)
 
     pj_shutdown();
 }
-
